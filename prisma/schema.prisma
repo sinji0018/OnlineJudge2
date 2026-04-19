@@ -1,0 +1,55 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  submissions Submission[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Problem {
+  id            String   @id @default(cuid())
+  title         String
+  description   String
+  difficulty    String   // e.g., "Easy", "Medium", "Hard"
+  acceptanceRate Float    @default(0.0)
+  submissions   Submission[]
+  testCases     TestCase[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Submission {
+  id         String   @id @default(cuid())
+  userId     String
+  problemId  String
+  code       String
+  language   String   // e.g., "C"
+  result     String   // e.g., "AC", "WA", "TLE", "RE", "CE"
+  time       Int?     // execution time in ms
+  memory     Int?     // memory usage in KB
+  user       User     @relation(fields: [userId], references: [id])
+  problem    Problem  @relation(fields: [problemId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model TestCase {
+  id        String  @id @default(cuid())
+  problemId String
+  input     String
+  output    String
+  problem   Problem @relation(fields: [problemId], references: [id])
+}
