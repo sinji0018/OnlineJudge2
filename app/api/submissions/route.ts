@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
-import { processSubmission } from '@/lib/judge/judge';
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db/prisma";
+import { processSubmission } from "@/lib/judge/judge";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,8 +10,8 @@ export async function POST(request: NextRequest) {
     // Validation
     if (!problemId || !language || !code) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
+        { error: "Missing required fields" },
+        { status: 400 },
       );
     }
 
@@ -21,25 +21,26 @@ export async function POST(request: NextRequest) {
         problemId,
         language,
         code,
-        userId: userId || 'anonymous',
-        result: 'Pending',
+        result: "Pending",
       },
     });
 
     // Process submission asynchronously
-    processSubmission(submission.id, code, problemId, language).catch((error) => {
-      console.error('Error processing submission:', error);
-    });
+    processSubmission(submission.id, code, problemId, language).catch(
+      (error) => {
+        console.error("Error processing submission:", error);
+      },
+    );
 
     return NextResponse.json({
       id: submission.id,
       result: submission.result,
     });
   } catch (error) {
-    console.error('Error creating submission:', error);
+    console.error("Error creating submission:", error);
     return NextResponse.json(
-      { error: 'Failed to create submission' },
-      { status: 500 }
+      { error: "Failed to create submission" },
+      { status: 500 },
     );
   }
 }

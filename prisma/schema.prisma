@@ -33,14 +33,14 @@ model Problem {
 
 model Submission {
   id         String   @id @default(cuid())
-  userId     String
+  userId     String?
   problemId  String
   code       String
   language   String   // e.g., "C"
   result     String   // e.g., "AC", "WA", "TLE", "RE", "CE"
   time       Int?     // execution time in ms
   memory     Int?     // memory usage in KB
-  user       User     @relation(fields: [userId], references: [id])
+  user       User?    @relation(fields: [userId], references: [id])
   problem    Problem  @relation(fields: [problemId], references: [id])
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
