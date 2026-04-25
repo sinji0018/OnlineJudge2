@@ -33,6 +33,13 @@ export default function ProblemDetailPage() {
   const [input, setInput] = useState<string>("");
   const [executionResult, setExecutionResult] = useState<string>("");
 
+  // Chat state for LLM
+  const [chatMessages, setChatMessages] = useState<
+    { role: "user" | "assistant"; content: string }[]
+  >([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+
   useEffect(() => {
     fetchProblem();
   }, [problemId]);
@@ -134,6 +141,65 @@ export default function ProblemDetailPage() {
     }
   };
 
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || chatLoading) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput("");
+    setChatLoading(true);
+
+    // Add user message to chat
+    setChatMessages((prev) => [
+      ...prev,
+      { role: "user", content: userMessage },
+    ]);
+
+    try {
+      // 日本語で回答するように指示を追加
+      const promptWithInstruction = `以下の質問には日本語で回答してください。箇条書きにする場合は、改行を使って見やすくしてください。\n\n質問: ${userMessage}`;
+
+      const response = await fetch("http://localhost:11434/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "llama3",
+          prompt: promptWithInstruction,
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to get response from Ollama");
+      }
+
+      const data = await response.json();
+      // 改行をHTMLの改行に変換して表示
+      const assistantMessage = (
+        data.response || "応答がありませんでした。"
+      ).replace(/\n/g, "\n");
+
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: assistantMessage },
+      ]);
+    } catch (error) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "エラー: " +
+            (error instanceof Error ? error.message : "Unknown error"),
+        },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   if (loading)
     return (
       <div className="bg-gray-900 min-h-screen text-white">読み込み中...</div>
@@ -198,9 +264,62 @@ export default function ProblemDetailPage() {
                 </div>
               </div>
 
-              <div className="bg-blue-900 rounded-lg p-4 border border-blue-700">
-                <h3 className="font-bold text-blue-100 mb-2">💡 AIヒント</h3>
-                <p className="text-blue-200">ヒント機能はまだ実装中です。</p>
+              <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <h3 className="font-bold text-white mb-4">💡 AIアシスタント</h3>
+
+                {/* Chat Messages */}
+                <div className="bg-gray-900 rounded-lg p-3 mb-3 max-h-64 overflow-y-auto border border-gray-600">
+                  {chatMessages.length === 0 ? (
+                    <p className="text-gray-400 text-sm">
+                      AIに質問してみましょう
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {chatMessages.map((msg, index) => (
+                        <div
+                          key={index}
+                          className={`p-2 rounded-lg text-sm whitespace-pre-wrap ${
+                            msg.role === "user"
+                              ? "bg-blue-900 text-blue-100 ml-8"
+                              : "bg-gray-700 text-gray-100 mr-8"
+                          }`}
+                        >
+                          <span className="font-semibold text-xs block mb-1">
+                            {msg.role === "user" ? "あなた" : "AI"}
+                          </span>
+                          {msg.content}
+                        </div>
+                      ))}
+                      {chatLoading && (
+                        <div className="bg-gray-700 text-gray-300 p-2 rounded-lg mr-8 text-sm">
+                          <span className="font-semibold text-xs block mb-1">
+                            AI
+                          </span>
+                          考え中...
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Chat Input */}
+                <form onSubmit={handleChatSubmit} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="質問を入力..."
+                    disabled={chatLoading}
+                    className="flex-1 px-3 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                  <button
+                    type="submit"
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-colors text-sm"
+                  >
+                    送信
+                  </button>
+                </form>
               </div>
             </div>
 
