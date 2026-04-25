@@ -40,6 +40,13 @@ export default function ProblemDetailPage() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
 
+  // Submission result state
+  const [submissionResult, setSubmissionResult] = useState<{
+    correct: boolean;
+    message: string;
+    details?: string;
+  } | null>(null);
+
   useEffect(() => {
     fetchProblem();
   }, [problemId]);
@@ -66,32 +73,163 @@ export default function ProblemDetailPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    setSubmissionResult(null);
 
     try {
-      const response = await fetch("/api/submissions", {
+      // 全てのテストケースに対して正誤判定を行う
+      if (!problem || !problem.testCases || problem.testCases.length === 0) {
+        throw new Error("テストケースがありません");
+      }
+
+      let allCorrect = true;
+      const results: string[] = [];
+
+      for (const testCase of problem.testCases) {
+        const response = await fetch("/api/execute", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            code,
+            language,
+            input: testCase.input,
+          }),
+        });
+
+        if (!response.ok) {
+          allCorrect = false;
+          results.push(`テストケース${results.length + 1}: 実行エラー`);
+          continue;
+        }
+
+        const result = await response.json();
+
+        if (!result.success) {
+          allCorrect = false;
+          results.push(
+            `テストケース${results.length + 1}: 実行エラー - ${result.error}`,
+          );
+          continue;
+        }
+
+        // 出力を正規化して比較
+        const actualOutput = result.output?.trim() || "";
+        const expectedOutput = testCase.output.trim();
+
+        if (actualOutput === expectedOutput) {
+          results.push(`テストケース${results.length + 1}: ✅ 正解`);
+        } else {
+          allCorrect = false;
+          results.push(
+            `テストケース${results.length + 1}: ❌ 不正解\n  期待: ${expectedOutput}\n  実際: ${actualOutput}`,
+          );
+        }
+      }
+
+      // 結果を設定
+      if (allCorrect) {
+        setSubmissionResult({
+          correct: true,
+          message: "🎉 全テストケース正解！",
+          details: results.join("\n"),
+        });
+      } else {
+        setSubmissionResult({
+          correct: false,
+          message: "❌ 不正解",
+          details: results.join("\n"),
+        });
+      }
+
+      // LLMによるレビューを取得
+      setChatLoading(true);
+
+      let reviewPrompt = "";
+      if (allCorrect) {
+        // 正解の場合は良い点を評価
+        reviewPrompt = `必ず日本語で回答してください。英語では絶対に回答しないでください。
+あなたはプログラミング初学者の先生です。
+以下のコードは問題を解くことができ、全テストに合格しました。
+子どもにもわかるように、シンプルな言葉で褒められるポイントを教えてください。
+
+【問題】
+${problem.title}
+
+【使われた言語】
+${language}
+
+【出したコード】
+${code}
+
+【お願い】
+- 難しい言葉使わない（例：可読性、計算量など）
+- 短い文章で
+- 1〜3つのシンプルな褒めるポイント
+- 必ず日本語で回答（英語禁止）`;
+      } else {
+        // 不正解の場合はヒントを提供
+        reviewPrompt = `必ず日本語で回答してください。英語では絶対に回答しないでください。
+あなたはプログラミング初学者の先生です。
+以下のコードは問題を解くことができませんでした。
+答えは出さないでください。子どもにもわかるように、シンプルなヒントをください。
+
+【問題】
+${problem.title}
+${problem.description}
+
+【出したコード】
+${language}:
+${code}
+
+【テスト結果】
+${results.join("\n")}
+
+【ヒントの出し方】
+- 答えは言わない
+- 簡単な言葉でヒントだけ
+- 1〜2つのヒントをだす
+- 必ず日本語で回答（英語禁止）`;
+      }
+
+      const llmResponse = await fetch("http://localhost:11434/api/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          problemId,
-          language,
-          code,
+          model: "phi3",
+          prompt: reviewPrompt,
+          stream: false,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to submit code");
-      }
+      if (llmResponse.ok) {
+        const llmData = await llmResponse.json();
+        const reviewContent =
+          llmData.response || "レビューがありませんでした。";
 
-      const result = await response.json();
-      alert(`提出成功! ID: ${result.id}`);
-      // Redirect to submission result page
-      window.location.href = `/submissions/${result.id}`;
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            role: "user",
+            content: allCorrect
+              ? "コードのレビューをお願いします（正解）"
+              : "コードのレビューをお願いします（不正解）",
+          },
+          {
+            role: "assistant",
+            content: allCorrect
+              ? "✅ コードレビュー:\n" + reviewContent
+              : "💡 ヒント & レビュー:\n" + reviewContent,
+          },
+        ]);
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : "An error occurred");
     } finally {
       setSubmitting(false);
+      setChatLoading(false);
     }
   };
 
@@ -265,6 +403,36 @@ export default function ProblemDetailPage() {
               </div>
 
               <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                {/* 提出結果の表示 */}
+                {submissionResult && (
+                  <div
+                    className={`mb-4 p-4 rounded-lg border ${
+                      submissionResult.correct
+                        ? "bg-green-900 border-green-700"
+                        : "bg-red-900 border-red-700"
+                    }`}
+                  >
+                    <h3
+                      className={`font-bold text-lg mb-2 ${
+                        submissionResult.correct
+                          ? "text-green-100"
+                          : "text-red-100"
+                      }`}
+                    >
+                      {submissionResult.message}
+                    </h3>
+                    <pre
+                      className={`text-sm whitespace-pre-wrap ${
+                        submissionResult.correct
+                          ? "text-green-200"
+                          : "text-red-200"
+                      }`}
+                    >
+                      {submissionResult.details}
+                    </pre>
+                  </div>
+                )}
+
                 <h3 className="font-bold text-white mb-4">💡 AIアシスタント</h3>
 
                 {/* Chat Messages */}
@@ -388,7 +556,7 @@ export default function ProblemDetailPage() {
                         disabled={submitting}
                         className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-colors"
                       >
-                        {submitting ? "提出中..." : "コードを提出"}
+                        {submitting ? "判定中..." : "コードを提出"}
                       </button>
                     </div>
 

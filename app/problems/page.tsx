@@ -14,25 +14,38 @@ export default function ProblemsPage() {
   const [problems, setProblems] = useState<Problem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    fetchProblems();
-  }, []);
-
-  const fetchProblems = async () => {
-    try {
-      const response = await fetch("/api/problems");
-      if (!response.ok) {
-        throw new Error("Failed to fetch problems");
+    // マウント後に実行（SSR/CSR の時間差を避ける）
+    setIsMounted(true);
+    
+    const fetchProblems = async () => {
+      try {
+        const response = await fetch("/api/problems");
+        if (!response.ok) {
+          throw new Error("Failed to fetch problems");
+        }
+        const data = await response.json();
+        setProblems(data);
+        // sessionStorage にも保存（ブラウザバック対応）
+        sessionStorage.setItem("problems", JSON.stringify(data));
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "An error occurred");
+      } finally {
+        setLoading(false);
       }
-      const data = await response.json();
-      setProblems(data);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "An error occurred");
-    } finally {
+    };
+
+    // sessionStorage にキャッシュがあればそれを使用
+    const cached = sessionStorage.getItem("problems");
+    if (cached) {
+      setProblems(JSON.parse(cached));
       setLoading(false);
+    } else {
+      fetchProblems();
     }
-  };
+  }, []);
 
   return (
     <div>
